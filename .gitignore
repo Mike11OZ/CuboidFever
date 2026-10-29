@@ -1,0 +1,13 @@
+# .NET build output
+bin/
+obj/
+**/bin/
+**/obj/
+
+# macOS metadata
+.DS_Store
+
+# IDE user-specific files
+*.user
+*.suo
+.vs/

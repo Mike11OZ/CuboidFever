@@ -1,0 +1,12 @@
+{
+  "name": "cuboidfever:green_lamp",
+  "solid": true,
+  "transparent": false,
+  "replaceable": false,
+  "emissive": true,
+  "emission": { "r": 0, "g": 15, "b": 0 },
+  "tint": [70, 255, 70],
+  "textures": {
+    "all": "cuboidfever:lamp"
+  }
+}

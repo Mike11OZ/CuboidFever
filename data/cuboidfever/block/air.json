@@ -1,0 +1,13 @@
+{
+  "name": "cuboidfever:air",
+  "solid": false,
+  "transparent": true,
+  "replaceable": true,
+  "emissive": false,
+  "emission": {
+    "r": 0,
+    "g": 0,
+    "b": 0
+  },
+  "tint": [255, 255, 255]
+}

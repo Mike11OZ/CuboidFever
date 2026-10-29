@@ -1,0 +1,12 @@
+{
+  "name": "cuboidfever:blue_lamp",
+  "solid": true,
+  "transparent": false,
+  "replaceable": false,
+  "emissive": true,
+  "emission": { "r": 0, "g": 0, "b": 15 },
+ "tint": [70, 100, 255],
+  "textures": {
+    "all": "cuboidfever:lamp"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "slots": [
+    "cuboidfever:grass",
+    "cuboidfever:dirt",
+    "cuboidfever:stone",
+    "cuboidfever:sand",
+    "cuboidfever:glass",
+    "cuboidfever:planks",
+    "cuboidfever:smooth_stone",
+    "cuboidfever:log",
+    "cuboidfever:leaves",
+    "cuboidfever:red_lamp",
+    "cuboidfever:green_lamp",
+    "cuboidfever:blue_lamp",
+    "cuboidfever:white_lamp"
+  ]
+}

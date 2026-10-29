@@ -1,0 +1,12 @@
+{
+  "name": "cuboidfever:red_lamp",
+  "solid": true,
+  "transparent": false,
+  "replaceable": false,
+  "emissive": true,
+  "emission": { "r": 15, "g": 0, "b": 0 },
+  "tint": [255, 70, 70],
+  "textures": {
+    "all": "cuboidfever:lamp"
+  }
+}

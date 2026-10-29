@@ -1,0 +1,12 @@
+{
+  "name": "cuboidfever:white_lamp",
+  "solid": true,
+  "transparent": false,
+  "replaceable": false,
+  "emissive": true,
+  "emission": { "r": 15, "g": 15, "b": 15 },
+  "tint": [255, 255, 255],
+  "textures": {
+    "all": "cuboidfever:lamp"
+  }
+}

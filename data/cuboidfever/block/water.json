@@ -1,0 +1,17 @@
+{
+  "name": "cuboidfever:water",
+  "solid": false,
+  "transparent": true,
+  "replaceable": true,
+  "emissive": false,
+  "emission": {
+    "r": 0,
+    "g": 0,
+    "b": 0
+  },
+  "tint": [80, 120, 255],
+  "renderLayer": "translucent",
+  "textures": {
+    "all": "cuboidfever:water"
+  }
+}

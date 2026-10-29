@@ -1,0 +1,17 @@
+{
+  "name": "cuboidfever:glass",
+  "solid": true,
+  "transparent": true,
+  "replaceable": false,
+  "emissive": false,
+  "emission": {
+    "r": 0,
+    "g": 0,
+    "b": 0
+  },
+  "tint": [255, 255, 255],
+  "renderLayer": "translucent",
+  "textures": {
+    "all": "cuboidfever:glass"
+  }
+}

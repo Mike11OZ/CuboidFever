@@ -1,0 +1,17 @@
+{
+  "name": "cuboidfever:leaves",
+  "solid": true,
+  "transparent": true,
+  "replaceable": true,
+  "emissive": false,
+  "emission": {
+    "r": 0,
+    "g": 0,
+    "b": 0
+  },
+  "tint": [100, 180, 70],
+  "renderLayer": "cutout",
+  "textures": {
+    "all": "cuboidfever:leaves"
+  }
+}

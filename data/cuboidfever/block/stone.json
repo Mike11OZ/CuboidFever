@@ -1,0 +1,16 @@
+{
+  "name": "cuboidfever:stone",
+  "solid": true,
+  "transparent": false,
+  "replaceable": false,
+  "emissive": false,
+  "emission": {
+    "r": 0,
+    "g": 0,
+    "b": 0
+  },
+  "tint": [255, 255, 255],
+  "textures": {
+    "all": "cuboidfever:stone"
+  }
+}
