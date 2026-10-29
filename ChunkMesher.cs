@@ -18,9 +18,10 @@ public sealed class MeshData
 public static class ChunkMesher
 {
     public const int MaxLeafDepth = 3;
-    public static int LeafCullDepth = 3;   // 0 = draw all leaf faces, 1 = cull internal, 2-3 = layers shown
+    public static int LeafCullDepth = 3;
 
-    private const int Pad = MaxLeafDepth;           // border cells around the chunk
+    // One extra cell because the adjacent leaf is already at distance 1.
+    private const int Pad = MaxLeafDepth + 1;
     private const int P = Chunk.Size + 2 * Pad;
     private const int PP = P * P, PCount = P * P * P;
 
@@ -172,19 +173,26 @@ public static class ChunkMesher
 
     // Called for a leaf face whose neighbor is also a leaf. 'neighborIndex' is that neighbor's
     // index in the padded snapshot and 'step' is the index offset for the face direction.
-    private static bool LeafFaceVisible(byte[] blocks, BlockInfo[] info, int neighborIndex, int step)
+    private static bool LeafFaceVisible(
+        byte[] blocks, BlockInfo[] info, int neighborIndex, int step)
     {
-        int depth = Math.Min(LeafCullDepth, MaxLeafDepth);
-        if (depth <= 0) return true;                 // draw everything
+        int depth = Math.Clamp(LeafCullDepth, 0, MaxLeafDepth);
+
+        if (depth == 0) return true;  // Draw all leaf faces
+        if (depth == 1) return false; // Cull adjacent leaf faces
 
         int idx = neighborIndex;
-        for (int d = 2; d <= depth; d++)
+
+        // Check two positions for depth 2, three for depth 3.
+        for (int d = 2; d <= depth + 1; d++)
         {
             idx += step;
             ref readonly BlockInfo bi = ref info[blocks[idx]];
-            if (bi.IsAir) return true;               // open air close enough: this face can be seen
-            if (!bi.IsLeaves) return false;          // hit something solid (a log, say): hidden
+
+            if (bi.IsAir) return true;
+            if (!bi.IsLeaves) return false;
         }
+
         return false;
     }
     // cols = the 3x3 columns around the chunk, index (dz + 1) * 3 + (dx + 1); center is 4
