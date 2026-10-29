@@ -23,7 +23,8 @@ public class Column
 
     // Local coordinates: x, z in 0..15, y in 0..Height-1
     public byte GetBlock(int x, int y, int z) => Chunks[y >> 4].GetBlock(x, y & 15, z);
-    public bool IsTransparent(int x, int y, int z) => Block.IsLightTransparent(GetBlock(x, y, z));
+    public bool IsTransparent(int x, int y, int z) =>
+        BlockRegistry.Instance.Info[GetBlock(x, y, z)].Transparent;
 
     private static readonly int[,] N =
     {

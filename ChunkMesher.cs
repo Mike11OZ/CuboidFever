@@ -12,11 +12,16 @@ public sealed class MeshData
     public int Version;
     public VertexPositionColorTexture[] SolidV, WaterV;
     public int[] SolidI, WaterI;
+    public byte[] WaterF;
 }
 
 public static class ChunkMesher
 {
-    private const int P = Chunk.Size + 2;   // padded size: the chunk plus a 1-block border
+    public const int MaxLeafDepth = 3;
+    public static int LeafCullDepth = 3;   // 0 = draw all leaf faces, 1 = cull internal, 2-3 = layers shown
+
+    private const int Pad = MaxLeafDepth;           // border cells around the chunk
+    private const int P = Chunk.Size + 2 * Pad;
     private const int PP = P * P, PCount = P * P * P;
 
     // Index offsets to the neighbor in each face direction (+X, -X, +Y, -Y, +Z, -Z)
@@ -32,6 +37,54 @@ public static class ChunkMesher
         new[] { new Vector3(1,0,0), new Vector3(1,1,0), new Vector3(0,1,0), new Vector3(0,0,0) }, // -Z
     };
 
+    public static bool AmbientOcclusion = true;
+
+    // Brightness by occlusion level: 0 = fully boxed in ... 3 = open
+    private static readonly float[] AoCurve = { 0.7f, 0.85f, 0.93f, 1.0f };
+    private static readonly float[] Flat = { 1f, 1f, 1f, 1f };
+
+    // For each face and vertex: index offsets (in the padded snapshot) of the two side cells
+    // and the corner cell that sit on the open side of that vertex.
+    private static readonly int[,,] AoIdx = BuildAo();
+
+    private static int[,,] BuildAo()
+    {
+        int[] stride = { 1, PP, P };   // index step for the x, y and z axes
+        var r = new int[6, 4, 3];
+
+        for (int f = 0; f < 6; f++)
+        {
+            int na = f / 2;                          // axis the face points along
+            int ns = f % 2 == 0 ? 1 : -1;            // and which way
+            int t1 = (na + 1) % 3, t2 = (na + 2) % 3;
+            int normalOff = ns * stride[na];
+
+            for (int v = 0; v < 4; v++)
+            {
+                Vector3 c = FaceCorners[f][v];
+                float[] comp = { c.X, c.Y, c.Z };
+                int d1 = comp[t1] > 0.5f ? 1 : -1;   // which way this vertex leans on each tangent axis
+                int d2 = comp[t2] > 0.5f ? 1 : -1;
+
+                r[f, v, 0] = normalOff + d1 * stride[t1];
+                r[f, v, 1] = normalOff + d2 * stride[t2];
+                r[f, v, 2] = normalOff + d1 * stride[t1] + d2 * stride[t2];
+            }
+        }
+        return r;
+    }
+
+    private static float AoFactor(byte[] blocks, BlockInfo[] info, int i, int f, int v)
+    {
+        bool s1 = info[blocks[i + AoIdx[f, v, 0]]].Occludes;
+        bool s2 = info[blocks[i + AoIdx[f, v, 1]]].Occludes;
+        bool c  = info[blocks[i + AoIdx[f, v, 2]]].Occludes;
+
+        // Two sides closed means the corner is sealed whether or not the diagonal is solid
+        int level = (s1 && s2) ? 0 : 3 - ((s1 ? 1 : 0) + (s2 ? 1 : 0) + (c ? 1 : 0));
+        return AoCurve[level];
+    }
+
     private static readonly Vector2[] FaceUV = { new(0, 1), new(0, 0), new(1, 0), new(1, 1) };
     private static readonly Vector2[] BottomUV = { new(0, 0), new(0, 1), new(1, 1), new(1, 0) };
     private static readonly float[] FaceShade = { 0.8f, 0.8f, 1.0f, 0.5f, 0.65f, 0.65f };
@@ -44,32 +97,32 @@ public static class ChunkMesher
     {
         for (int p = 0; p < P; p++)
         {
-            ColOff[p] = p == 0 ? -1 : p == P - 1 ? 1 : 0;
-            LocalOf[p] = (p - 1) & 15;
+            ColOff[p] = p < Pad ? -1 : p >= Pad + Chunk.Size ? 1 : 0;
+            LocalOf[p] = (p - Pad) & 15;
         }
     }
 
     private sealed class Builder
     {
+        public readonly List<byte> F = new();
         public readonly List<VertexPositionColorTexture> V = new();
         public readonly List<int> I = new();
 
-        public void Clear() { V.Clear(); I.Clear(); }
+        public void Clear() { V.Clear(); I.Clear(); F.Clear(); }
 
     
-        public void AddFace(int f, Vector3 pos, Color color, TextureRegion region)
+        public void AddFace(int f, Vector3 pos, Color color, TextureRegion region, float[] ao)
         {
             int start = V.Count;
+            for (int c = 0; c < 4; c++) F.Add((byte)f);   // face index per vertex, for the water Fresnel
 
-            // A tiny inset helps prevent neighboring atlas textures bleeding
-            // into this face. Scale U and V independently.
-            float insetU = 0.05f / TextureAtlas.Instance.Width;
-            float insetV = 0.05f / TextureAtlas.Instance.Height;
-
+            float insetU = BlockRegistry.Instance.InsetU;
+            float insetV = BlockRegistry.Instance.InsetV;
             float widthU = region.U1 - region.U0;
             float heightV = region.V1 - region.V0;
-
             Vector2[] uvs = f == 3 ? BottomUV : FaceUV;
+
+            float r = color.R / 255f, g = color.G / 255f, b = color.B / 255f, a = color.A / 255f;
 
             for (int c = 0; c < 4; c++)
             {
@@ -77,14 +130,23 @@ public static class ChunkMesher
                     region.U0 + insetU + uvs[c].X * (widthU - 2f * insetU),
                     region.V0 + insetV + uvs[c].Y * (heightV - 2f * insetV));
 
+                float k = ao[c];
                 V.Add(new VertexPositionColorTexture(
-                    FaceCorners[f][c] + pos,
-                    color,
-                    uv));
+                    FaceCorners[f][c] + pos, new Color(r * k, g * k, b * k, a), uv));
             }
 
-            I.Add(start);     I.Add(start + 1); I.Add(start + 2);
-            I.Add(start);     I.Add(start + 2); I.Add(start + 3);
+            // Split the quad along the diagonal joining the darker pair of corners,
+            // so the shading blends smoothly instead of creasing
+            if (ao[0] + ao[2] > ao[1] + ao[3])
+            {
+                I.Add(start + 1); I.Add(start + 2); I.Add(start + 3);
+                I.Add(start + 1); I.Add(start + 3); I.Add(start);
+            }
+            else
+            {
+                I.Add(start);     I.Add(start + 1); I.Add(start + 2);
+                I.Add(start);     I.Add(start + 2); I.Add(start + 3);
+            }
         }
     }
     // Each thread keeps its own scratch buffers, so meshing allocates almost nothing
@@ -98,49 +160,33 @@ public static class ChunkMesher
     [ThreadStatic] private static Buffers _buf;
 
 
-    private static bool ShouldDrawFace(byte self, byte neighbor)
+    private static bool ShouldDrawFace(in BlockInfo self, in BlockInfo nb)
     {
-        var registry = BlockRegistry.Instance;
-        var selfDef = registry.Get(self);
-        var neighborDef = registry.Get(neighbor);
-
-        string selfName = selfDef.Name;
-        string neighborName = neighborDef.Name;
-
-        bool selfWater = selfName == "cuboidfever:water";
-        bool neighborWater = neighborName == "cuboidfever:water";
-        bool selfGlass = selfName == "cuboidfever:glass";
-        bool neighborGlass = neighborName == "cuboidfever:glass";
-        bool selfLeaves = selfName == "cuboidfever:leaves";
-        bool neighborLeaves = neighborName == "cuboidfever:leaves";
-
-        // Air is always an exposed surface.
-        if (neighborName == "cuboidfever:air")
-            return true;
-
-        // Water surfaces are only drawn against air.
-        // The neighboring block renders its own visible face, if appropriate.
-        if (selfWater)
-            return false;
-
-        // Suppress internal faces between matching transparent blocks.
-        if ((selfGlass && neighborGlass) ||
-            (selfLeaves && neighborLeaves))
-            return false;
-
-        // Glass faces remain visible against water and leaves,
-        // but not against opaque terrain.
-        if (selfGlass)
-            return neighborWater || neighborLeaves;
-
-        // Opaque terrain should still be visible through transparent materials.
-        if (!selfDef.Transparent)
-            return neighborDef.Transparent;
-
-        // Other transparent-material boundaries.
-        return neighborDef.Transparent;
+        if (nb.IsAir) return true;                         // air is always an exposed surface
+        if (self.IsWater) return false;                    // water only shows against air
+        if (self.IsGlass && nb.IsGlass) return false;      // no internal faces
+        if (self.IsLeaves && nb.IsLeaves) return false;
+        if (self.IsGlass) return nb.IsWater || nb.IsLeaves;
+        return nb.Transparent;                             // opaque and other blocks show through see-through neighbors
     }
 
+    // Called for a leaf face whose neighbor is also a leaf. 'neighborIndex' is that neighbor's
+    // index in the padded snapshot and 'step' is the index offset for the face direction.
+    private static bool LeafFaceVisible(byte[] blocks, BlockInfo[] info, int neighborIndex, int step)
+    {
+        int depth = Math.Min(LeafCullDepth, MaxLeafDepth);
+        if (depth <= 0) return true;                 // draw everything
+
+        int idx = neighborIndex;
+        for (int d = 2; d <= depth; d++)
+        {
+            idx += step;
+            ref readonly BlockInfo bi = ref info[blocks[idx]];
+            if (bi.IsAir) return true;               // open air close enough: this face can be seen
+            if (!bi.IsLeaves) return false;          // hit something solid (a log, say): hidden
+        }
+        return false;
+    }
     // cols = the 3x3 columns around the chunk, index (dz + 1) * 3 + (dx + 1); center is 4
     public static MeshData Build(Chunk chunk, Column[] cols, int version)
     {
@@ -154,40 +200,57 @@ public static class ChunkMesher
 
         int ox = chunk.CX * Chunk.Size, oy = chunk.CY * Chunk.Size, oz = chunk.CZ * Chunk.Size;
 
+        var registry = BlockRegistry.Instance;
+        var info = registry.Info;
+        var ao = new float[4];
+
         for (int y = 0; y < Chunk.Size; y++)
         for (int z = 0; z < Chunk.Size; z++)
         for (int x = 0; x < Chunk.Size; x++)
         {
-            int i = ((y + 1) * P + (z + 1)) * P + (x + 1);
+            int i = ((y + Pad) * P + (z + Pad)) * P + (x + Pad);
             byte id = b.Blocks[i];
-            var definition = BlockRegistry.Instance.Get(id);
+            ref readonly BlockInfo self = ref info[id];
+            if (self.IsAir) continue;
 
-            if (definition.Name == "cuboidfever:air")
-                continue;
-
-            Builder builder = definition.Name == "cuboidfever:water"
-                ? b.Water
-                : b.Solid;
+            Builder builder = self.IsWater ? b.Water : b.Solid;
             var pos = new Vector3(ox + x, oy + y, oz + z);
 
             for (int f = 0; f < 6; f++)
             {
                 int n = i + Offsets[f];
-                if (!ShouldDrawFace(id, b.Blocks[n])) continue;
-                var region = BlockRegistry.Instance.GetTextureRegion(id, f);
-                    builder.AddFace(f, pos, LightColor(id, f, n, b.Light), region);
+                byte nbId = b.Blocks[n];
+                bool draw = self.IsLeaves && info[nbId].IsLeaves
+                    ? LeafFaceVisible(b.Blocks, info, n, Offsets[f])
+                    : ShouldDrawFace(in self, in info[nbId]);
+                if (!draw) continue;
+                float[] faceAo = Flat;
+                if (AmbientOcclusion && !self.IsWater && !self.Emissive)
+                {
+                    for (int v = 0; v < 4; v++) ao[v] = AoFactor(b.Blocks, info, i, f, v);
+                    faceAo = ao;
+                }
+
+                builder.AddFace(f, pos, LightColor(in self, f, n, b.Light), registry.FastRegion(id, f), faceAo);
             }
         }
 
         if (b.Solid.I.Count > 0) { result.SolidV = b.Solid.V.ToArray(); result.SolidI = b.Solid.I.ToArray(); }
-        if (b.Water.I.Count > 0) { result.WaterV = b.Water.V.ToArray(); result.WaterI = b.Water.I.ToArray(); }
+        if (b.Water.I.Count > 0)
+        {
+            result.WaterV = b.Water.V.ToArray();
+            result.WaterI = b.Water.I.ToArray();
+            result.WaterF = b.Water.F.ToArray();
+        }
         return result;
     }
 
     // Copies blocks and light for the chunk and a 1-block border into flat arrays
     private static void Snapshot(Chunk c, Column[] cols, Buffers b)
     {
-        int baseY = c.CY * Chunk.Size - 1;
+        const byte air = Block.Air;
+        byte stone = BlockRegistry.Instance.GetId("cuboidfever:stone");
+        int baseY = c.CY * Chunk.Size - Pad;
 
         for (int py = 0; py < P; py++)
         {
@@ -205,7 +268,7 @@ public static class ChunkMesher
 
                     if (outside)
                     {
-                        b.Blocks[i] = BlockRegistry.Instance.GetId("cuboidfever:air");
+                        b.Blocks[i] = air;
                         b.Light[0][i] = (byte)(wy < 0 ? 0 : 15);
                         b.Light[1][i] = b.Light[2][i] = b.Light[3][i] = 0;
                         continue;
@@ -214,7 +277,7 @@ public static class ChunkMesher
                     var col = cols[rowStart + ColOff[px] + 1];
                     if (col == null) // shouldn't happen: columns are only meshed once surrounded
                     {
-                        b.Blocks[i] = BlockRegistry.Instance.GetId("cuboidfever:stone");
+                        b.Blocks[i] = stone;
                         b.Light[0][i] = b.Light[1][i] = b.Light[2][i] = b.Light[3][i] = 0;
                         continue;
                     }
@@ -222,10 +285,17 @@ public static class ChunkMesher
                     int lx = LocalOf[px];
                     b.Blocks[i] = col.GetBlock(lx, wy, lz);
                     int li = Column.LIdx(lx, wy, lz);
-                    b.Light[0][i] = col.Light[0][li];
-                    b.Light[1][i] = col.Light[1][li];
-                    b.Light[2][i] = col.Light[2][li];
-                    b.Light[3][i] = col.Light[3][li];
+                    // Light is only read for cells next to the chunk, so skip the outer padding
+                    bool lit = py >= Pad - 1 && py <= Pad + Chunk.Size
+                            && pz >= Pad - 1 && pz <= Pad + Chunk.Size
+                            && px >= Pad - 1 && px <= Pad + Chunk.Size;
+                    if (lit)
+                    {
+                        b.Light[0][i] = col.Light[0][li];
+                        b.Light[1][i] = col.Light[1][li];
+                        b.Light[2][i] = col.Light[2][li];
+                        b.Light[3][i] = col.Light[3][li];
+                    }
                 }
             }
         }
@@ -233,31 +303,19 @@ public static class ChunkMesher
 
     // Vertex color = light (sampled from the cell in front of the face) x face shade
 
-    private static Color LightColor(byte id, int face, int n, byte[][] light)
+    private static Color LightColor(in BlockInfo self, int face, int n, byte[][] light)
     {
-        var definition = BlockRegistry.Instance.Get(id);
+        if (self.Emissive)
+            return new Color(self.TintR, self.TintG, self.TintB, 1f);
 
-        float a = definition.Name == "cuboidfever:water" ? 0.6f : 1f;
-        float r, g, bl;
+        float shade = FaceShade[face];
+        float sky = Chunk.Curve[light[0][n]];
 
-        if (definition.Emissive)
-        {
-            Color tint = definition.Tint?.ToXnaColor() ?? Color.White;
-            r = tint.R / 255f;
-            g = tint.G / 255f;
-            bl = tint.B / 255f;
-        }
-        else
-        {
-            float shade = FaceShade[face];
-            float sky = Chunk.Curve[light[0][n]];
+        float r  = MathF.Max(sky, Chunk.Curve[light[1][n]]) * shade * self.TintR;
+        float g  = MathF.Max(sky, Chunk.Curve[light[2][n]]) * shade * self.TintG;
+        float bl = MathF.Max(sky, Chunk.Curve[light[3][n]]) * shade * self.TintB;
 
-            r = MathF.Max(sky, Chunk.Curve[light[1][n]]) * shade;
-            g = MathF.Max(sky, Chunk.Curve[light[2][n]]) * shade;
-            bl = MathF.Max(sky, Chunk.Curve[light[3][n]]) * shade;
-        }
-
-        return new Color(r * a, g * a, bl * a, a);
+        return new Color(r, g, bl, 1f);
     }
 
 }

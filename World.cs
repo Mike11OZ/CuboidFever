@@ -25,11 +25,7 @@ public class World
     private readonly HashSet<Chunk> _inFlight = new();  // a mesh job is running
     private readonly List<Chunk> _visible = new();
 
-    private readonly byte _airId =
-    BlockRegistry.Instance.GetId("cuboidfever:air");
-
-    private readonly byte _waterId =
-    BlockRegistry.Instance.GetId("cuboidfever:water");
+    private readonly byte _airId, _waterId;
 
     private bool _urgentMode;
 
@@ -87,7 +83,17 @@ public class World
     public bool IsSolid(int x, int y, int z)
     {
         byte b = GetBlock(x, y, z);
-        return BlockRegistry.Instance.Get(b).Solid;
+        return BlockRegistry.Instance.Info[b].Solid;
+    }
+
+    public void RemeshAll()
+    {
+        foreach (var col in _columns.Values)
+        {
+            if (!col.Active) continue;
+            foreach (var chunk in col.Chunks)
+                if (!chunk.IsEmpty) MarkDirty(chunk);
+        }
     }
 
     // =====================  PER-FRAME UPDATE  =====================
@@ -397,6 +403,7 @@ public class World
 
             if (frustum.Intersects(chunk.Bounds)) _visible.Add(chunk);
         }
+        foreach (var chunk in _visible) chunk.UpdateWater(camPos);
     }
 
     public void DrawSolid(GraphicsDevice device)

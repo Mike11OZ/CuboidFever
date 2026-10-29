@@ -7,8 +7,54 @@ using Microsoft.Xna.Framework;
 
 namespace CuboidFever;
 
+public struct BlockInfo
+{
+    public bool Transparent, Solid, Emissive, Occludes;
+    public bool IsAir, IsWater, IsGlass, IsLeaves;
+    public float TintR, TintG, TintB;   // 0-1, used by emissive blocks
+    
+}
 public sealed class BlockRegistry
 {
+    public readonly BlockInfo[] Info = new BlockInfo[256];
+    private readonly TextureRegion[] _faceRegions = new TextureRegion[256 * 6];
+
+    public float InsetU { get; private set; }
+    public float InsetV { get; private set; }
+
+    public TextureRegion FastRegion(byte id, int face) => _faceRegions[id * 6 + face];
+
+    // Builds the lookup tables. Needs the texture atlas, so it runs last in the constructor.
+    private void Bake()
+    {
+        var atlas = TextureAtlas.Instance
+            ?? throw new InvalidOperationException("Initialize TextureAtlas before BlockRegistry.");
+
+        InsetU = 0.05f / atlas.Width;
+        InsetV = 0.05f / atlas.Height;
+
+        foreach (var (id, def) in _definitions)
+        {
+            Color tint = def.Tint?.ToXnaColor() ?? Color.White;
+            string name = def.Name;
+
+            Info[id] = new BlockInfo
+            {
+                Transparent = def.Transparent,
+                Solid = def.Solid,
+                Emissive = def.Emissive,
+                Occludes = def.Solid && !def.Transparent,
+                IsAir = name.Equals("cuboidfever:air", StringComparison.OrdinalIgnoreCase),
+                IsWater = name.Equals("cuboidfever:water", StringComparison.OrdinalIgnoreCase),
+                IsGlass = name.Equals("cuboidfever:glass", StringComparison.OrdinalIgnoreCase),
+                IsLeaves = name.Equals("cuboidfever:leaves", StringComparison.OrdinalIgnoreCase),
+                TintR = tint.R / 255f, TintG = tint.G / 255f, TintB = tint.B / 255f
+            };
+
+            for (int f = 0; f < 6; f++)
+                _faceRegions[id * 6 + f] = GetTextureRegion(id, f);
+        }
+    }
     public static BlockRegistry Instance { get; private set; }
 
     private readonly Dictionary<string, byte> _ids =
@@ -154,6 +200,7 @@ public sealed class BlockRegistry
         HotbarIds = (hotbar.Slots ?? new List<string>())
             .Select(GetId)
             .ToArray();
+        Bake();
     }
 
     public Color GetTint(byte id)

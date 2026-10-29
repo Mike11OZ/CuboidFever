@@ -52,7 +52,7 @@ public class LightMap
     private bool Transparent(int x, int y, int z)
     {
         byte id = _world.GetBlock(x, y, z);
-        return BlockRegistry.Instance.Get(id).Transparent;
+        return BlockRegistry.Instance.Info[_world.GetBlock(x, y, z)].Transparent;
     }
 
     private static int Emit(int ch, byte block)

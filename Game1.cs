@@ -21,14 +21,14 @@ public class Game1 : Game
     private World _world;
     private AlphaTestEffect _solidEffect;
     private bool _spawned;
-
+    private bool _lWasDown;
+    private bool _oWasDown;
+    private bool _vWasDown;
     private byte _airId;
-
 
     // ---- Camera ----
     private Player _player = new();
     private Vector3 _camPos;
-    private bool _vWasDown;
     private Vector3 _forward;
     private float _yaw, _pitch;
 
@@ -168,6 +168,8 @@ public class Game1 : Game
         }
 
         HandleFpsHotkey(kb);
+        HandleLeafHotkey(kb);
+        HandleAoHotkey(kb);
         UpdateCamera(kb, mouse, (float)gameTime.ElapsedGameTime.TotalSeconds);
         HandleBlockSelection(kb, mouse);
         HandleBlockInteraction(mouse);
@@ -378,7 +380,7 @@ public class Game1 : Game
 
         int cap = _fpsCaps[_capIndex];
         Window.Title = $"CuboidFever | {_frames} FPS (cap: {(cap == 0 ? "none" : cap)}) | " +
-               $"chunks {_world.VisibleChunks}/{_world.TotalChunks} | queue {_world.PendingWork} | holding: {_hotbarNames[_slot]}";
+               $"chunks {_world.VisibleChunks}/{_world.TotalChunks} | queue {_world.PendingWork} | holding: {_hotbarNames[_slot]} | leaves {ChunkMesher.LeafCullDepth} | AO {(ChunkMesher.AmbientOcclusion ? "on" : "off")}";
         _frames = 0;
         _lastFpsTime = gameTime.TotalGameTime.TotalSeconds;
     }
@@ -395,5 +397,27 @@ public class Game1 : Game
             IsFixedTimeStep = true;
             TargetElapsedTime = TimeSpan.FromSeconds(1.0 / cap);
         }
+    }
+
+    private void HandleLeafHotkey(KeyboardState kb)
+    {
+        bool down = kb.IsKeyDown(Keys.L);
+        if (down && !_lWasDown)
+        {
+            ChunkMesher.LeafCullDepth = (ChunkMesher.LeafCullDepth + 1) % (ChunkMesher.MaxLeafDepth + 1);
+            _world.RemeshAll();
+        }
+        _lWasDown = down;
+    }
+
+    private void HandleAoHotkey(KeyboardState kb)
+    {
+        bool down = kb.IsKeyDown(Keys.O);
+        if (down && !_oWasDown)
+        {
+            ChunkMesher.AmbientOcclusion = !ChunkMesher.AmbientOcclusion;
+            _world.RemeshAll();
+        }
+        _oWasDown = down;
     }
 }
